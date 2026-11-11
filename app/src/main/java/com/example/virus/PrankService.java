@@ -4,15 +4,20 @@ import android.app.Service;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.AppOpsManager;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
 import android.content.Intent;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Process;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -29,8 +34,8 @@ public class PrankService extends Service {
     private View warning;
 
     private boolean running = true;
-    private long lastEventTime;
     private String lastApp = "";
+    private long lastEventTime = 0;
 
     private final Runnable scanner = new Runnable() {
         @Override
@@ -38,42 +43,59 @@ public class PrankService extends Service {
 
             if (!running) return;
 
-            UsageStatsManager usage =
-                    (UsageStatsManager)
-                    getSystemService(USAGE_STATS_SERVICE);
+            try {
+                UsageStatsManager usage =
+                        (UsageStatsManager)
+                        getSystemService(USAGE_STATS_SERVICE);
 
-            long now = System.currentTimeMillis();
+                long now = System.currentTimeMillis();
 
-            UsageEvents events = usage.queryEvents(
-                    Math.max(lastEventTime, now - 3000),
-                    now
-            );
+                UsageEvents events = usage.queryEvents(
+                        now - 10000,
+                        now
+                );
 
-            UsageEvents.Event event =
-                    new UsageEvents.Event();
+                UsageEvents.Event event =
+                        new UsageEvents.Event();
 
-            while (events.hasNextEvent()) {
+                String currentApp = null;
+                long newestTime = 0;
 
-                events.getNextEvent(event);
+                while (events.hasNextEvent()) {
 
-                if (event.getEventType() ==
-                        UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    events.getNextEvent(event);
 
-                    String app = event.getPackageName();
+                    int type = event.getEventType();
 
-                    if (!app.equals(getPackageName())
-                            && !app.equals(lastApp)
-                            && !app.contains("launcher")
-                            && !app.contains("systemui")) {
+                    if (type ==
+                            UsageEvents.Event.MOVE_TO_FOREGROUND
+                            || type ==
+                            UsageEvents.Event.ACTIVITY_RESUMED) {
 
-                        lastApp = app;
+                        if (event.getTimeStamp() > newestTime) {
+                            newestTime = event.getTimeStamp();
+                            currentApp = event.getPackageName();
+                        }
+                    }
+                }
+
+                if (currentApp != null) {
+
+                    if (!currentApp.equals(getPackageName())
+                            && !currentApp.equals(lastApp)
+                            && !currentApp.contains("launcher")
+                            && !currentApp.contains("systemui")) {
+
+                        lastApp = currentApp;
+
                         showWarning();
                     }
                 }
+
+            } catch (Exception ignored) {
             }
 
-            lastEventTime = now;
-            handler.postDelayed(this, 700);
+            handler.postDelayed(this, 1000);
         }
     };
 
@@ -100,7 +122,7 @@ public class PrankService extends Service {
                 new Notification.Builder(this, "virus_prank")
                         .setContentTitle("Virus prank is active")
                         .setContentText(
-                                "Tap the golden coin to stop the prank"
+                                "Tap the golden coin to stop"
                         )
                         .setSmallIcon(
                                 android.R.drawable.ic_dialog_alert
@@ -108,8 +130,6 @@ public class PrankService extends Service {
                         .build();
 
         startForeground(7, notification);
-
-        lastEventTime = System.currentTimeMillis();
 
         handler.post(scanner);
     }
@@ -122,7 +142,7 @@ public class PrankService extends Service {
 
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(25, 35, 25, 35);
+        box.setPadding(30, 40, 30, 40);
         box.setBackgroundColor(0xEE150000);
 
         TextView title = new TextView(this);
